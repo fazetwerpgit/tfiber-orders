@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Trophy, Medal, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Trophy, Medal, TrendingUp, Flame, DollarSign, BarChart3 } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 
 interface LeaderboardEntry {
@@ -11,19 +11,19 @@ interface LeaderboardEntry {
   email: string;
   order_count: number;
   total_commission: number;
+  avg_commission: number;
+  current_streak: number;
 }
 
-type TimeRange = 'today' | 'week' | 'month';
+type TimeRange = 'today' | 'week' | 'month' | 'all';
+type SortBy = 'orders' | 'commission' | 'streak';
 
 export default function TeamPage() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<TimeRange>('week');
+  const [sortBy, setSortBy] = useState<SortBy>('orders');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-
-  useEffect(() => {
-    loadLeaderboard();
-  }, [timeRange]);
 
   const loadLeaderboard = async () => {
     setLoading(true);
@@ -35,13 +35,16 @@ export default function TeamPage() {
 
     // Calculate date range
     const now = new Date();
-    let startDate = new Date();
+    let startDate = new Date(0); // Default to all time
 
     if (timeRange === 'today') {
+      startDate = new Date();
       startDate.setHours(0, 0, 0, 0);
     } else if (timeRange === 'week') {
+      startDate = new Date();
       startDate.setDate(now.getDate() - 7);
-    } else {
+    } else if (timeRange === 'month') {
+      startDate = new Date();
       startDate.setMonth(now.getMonth() - 1);
     }
 
@@ -50,32 +53,60 @@ export default function TeamPage() {
       .from('users')
       .select('id, name, email');
 
+    // Get streaks for all users
+    const { data: streaks } = await supabase
+      .from('user_streaks')
+      .select('user_id, current_streak');
+
+    const streakMap = new Map<string, number>();
+    streaks?.forEach(s => streakMap.set(s.user_id, s.current_streak || 0));
+
     // Get orders within date range
-    const { data: orders } = await supabase
+    let ordersQuery = supabase
       .from('orders')
       .select('salesperson_id, commission_amount')
-      .gte('created_at', startDate.toISOString())
       .neq('status', 'cancelled');
+
+    if (timeRange !== 'all') {
+      ordersQuery = ordersQuery.gte('created_at', startDate.toISOString());
+    }
+
+    const { data: orders } = await ordersQuery;
 
     if (users && orders) {
       const leaderboardData: LeaderboardEntry[] = users.map(user => {
         const userOrders = orders.filter(o => o.salesperson_id === user.id);
+        const totalCommission = userOrders.reduce((sum, o) => sum + (o.commission_amount || 0), 0);
         return {
           id: user.id,
           name: user.name,
           email: user.email,
           order_count: userOrders.length,
-          total_commission: userOrders.reduce((sum, o) => sum + (o.commission_amount || 0), 0),
+          total_commission: totalCommission,
+          avg_commission: userOrders.length > 0 ? totalCommission / userOrders.length : 0,
+          current_streak: streakMap.get(user.id) || 0,
         };
       });
 
-      // Sort by order count descending
-      leaderboardData.sort((a, b) => b.order_count - a.order_count);
+      // Sort based on selected metric
+      if (sortBy === 'orders') {
+        leaderboardData.sort((a, b) => b.order_count - a.order_count);
+      } else if (sortBy === 'commission') {
+        leaderboardData.sort((a, b) => b.total_commission - a.total_commission);
+      } else if (sortBy === 'streak') {
+        leaderboardData.sort((a, b) => b.current_streak - a.current_streak);
+      }
+
       setLeaderboard(leaderboardData);
     }
 
     setLoading(false);
   };
+
+  useEffect(() => {
+    loadLeaderboard();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeRange, sortBy]);
 
   const getRankStyle = (index: number) => {
     if (index === 0) return 'bg-gradient-to-r from-yellow-400 to-yellow-500 text-yellow-900';
@@ -106,20 +137,57 @@ export default function TeamPage() {
         </div>
 
         {/* Time Range Selector */}
-        <div className="flex gap-2">
-          {(['today', 'week', 'month'] as TimeRange[]).map((range) => (
+        <div className="flex gap-2 mb-3">
+          {(['today', 'week', 'month', 'all'] as TimeRange[]).map((range) => (
             <button
               key={range}
               onClick={() => setTimeRange(range)}
-              className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
+              className={`px-3 py-1.5 rounded-lg font-medium text-sm transition-colors ${
                 timeRange === range
                   ? 'bg-white text-pink-600'
                   : 'bg-pink-500/30 text-white hover:bg-pink-500/50'
               }`}
             >
-              {range === 'today' ? 'Today' : range === 'week' ? 'This Week' : 'This Month'}
+              {range === 'today' ? 'Today' : range === 'week' ? 'Week' : range === 'month' ? 'Month' : 'All'}
             </button>
           ))}
+        </div>
+
+        {/* Sort By Selector */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => setSortBy('orders')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm transition-colors ${
+              sortBy === 'orders'
+                ? 'bg-white/20 text-white'
+                : 'text-pink-200 hover:text-white'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4" />
+            Orders
+          </button>
+          <button
+            onClick={() => setSortBy('commission')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm transition-colors ${
+              sortBy === 'commission'
+                ? 'bg-white/20 text-white'
+                : 'text-pink-200 hover:text-white'
+            }`}
+          >
+            <DollarSign className="w-4 h-4" />
+            Commission
+          </button>
+          <button
+            onClick={() => setSortBy('streak')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm transition-colors ${
+              sortBy === 'streak'
+                ? 'bg-white/20 text-white'
+                : 'text-pink-200 hover:text-white'
+            }`}
+          >
+            <Flame className="w-4 h-4" />
+            Streaks
+          </button>
         </div>
       </header>
 
@@ -190,6 +258,12 @@ export default function TeamPage() {
                 <div className="text-lg font-bold text-green-600 dark:text-green-400">${entry.total_commission.toFixed(0)}</div>
                 <div className="text-xs text-gray-500 dark:text-gray-400">earned</div>
               </div>
+              {entry.current_streak > 0 && (
+                <div className="flex items-center gap-1 bg-orange-100 dark:bg-orange-900/30 px-2 py-1 rounded-full">
+                  <Flame className="w-4 h-4 text-orange-500" />
+                  <span className="text-sm font-bold text-orange-600 dark:text-orange-400">{entry.current_streak}</span>
+                </div>
+              )}
             </div>
           ))
         )}

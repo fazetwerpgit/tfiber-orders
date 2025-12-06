@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, FileText, Users, Settings, TrendingUp, DollarSign, LogOut } from 'lucide-react';
+import { Plus, FileText, Users, Settings, TrendingUp, DollarSign, LogOut, Flame, Target, Trophy, Calculator } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { Order, PLAN_NAMES } from '@/lib/types';
 import { TFiberLogo } from '@/components/branding/t-fiber-logo';
@@ -13,6 +13,14 @@ interface Stats {
   weekOrders: number;
   monthOrders: number;
   pendingCommission: number;
+}
+
+interface GoalData {
+  dailyGoal: number;
+  weeklyGoal: number;
+  monthlyGoal: number;
+  currentStreak: number;
+  longestStreak: number;
 }
 
 export default function Dashboard() {
@@ -26,10 +34,13 @@ export default function Dashboard() {
   });
   const [recentOrders, setRecentOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    checkAuth();
-  }, []);
+  const [goalData, setGoalData] = useState<GoalData>({
+    dailyGoal: 3,
+    weeklyGoal: 15,
+    monthlyGoal: 50,
+    currentStreak: 0,
+    longestStreak: 0,
+  });
 
   const checkAuth = async () => {
     const supabase = createClient();
@@ -75,6 +86,32 @@ export default function Dashboard() {
 
       setRecentOrders(orders.slice(0, 5));
     }
+
+    // Load goals and streaks
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: goals } = await supabase
+        .from('user_goals')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      const { data: streak } = await supabase
+        .from('user_streaks')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (goals || streak) {
+        setGoalData({
+          dailyGoal: goals?.daily_goal || 3,
+          weeklyGoal: goals?.weekly_goal || 15,
+          monthlyGoal: goals?.monthly_goal || 50,
+          currentStreak: streak?.current_streak || 0,
+          longestStreak: streak?.longest_streak || 0,
+        });
+      }
+    }
   };
 
   const handleSignOut = async () => {
@@ -82,6 +119,11 @@ export default function Dashboard() {
     await supabase.auth.signOut();
     router.push('/login');
   };
+
+  useEffect(() => {
+    checkAuth();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (loading) {
     return (
@@ -120,9 +162,56 @@ export default function Dashboard() {
             <div className="text-xs text-pink-200 font-medium mt-1">Total</div>
           </div>
         </div>
+
+        {/* Streak Badge */}
+        {goalData.currentStreak > 0 && (
+          <div className="mt-4 flex items-center justify-center gap-2 bg-gradient-to-r from-orange-500/30 to-red-500/30 rounded-xl py-2 px-4">
+            <Flame className="w-5 h-5 text-orange-300" />
+            <span className="font-bold text-white">{goalData.currentStreak} Day Streak!</span>
+            {goalData.currentStreak >= goalData.longestStreak && goalData.currentStreak > 1 && (
+              <span className="text-xs bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full font-bold">BEST</span>
+            )}
+          </div>
+        )}
       </header>
 
       <main className="p-4 space-y-4">
+        {/* Daily Goal Progress */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-2xl p-5 shadow-sm border border-blue-100 dark:border-blue-900/50">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30">
+                <Target className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <div className="text-sm text-blue-700 dark:text-blue-400 font-medium">Daily Goal</div>
+                <div className="text-xl font-extrabold text-blue-600 dark:text-blue-400">
+                  {stats.todayOrders} / {goalData.dailyGoal}
+                </div>
+              </div>
+            </div>
+            {stats.todayOrders >= goalData.dailyGoal ? (
+              <div className="flex items-center gap-1 bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 px-3 py-1 rounded-full">
+                <Trophy className="w-4 h-4" />
+                <span className="text-sm font-bold">Done!</span>
+              </div>
+            ) : (
+              <div className="text-right">
+                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                  {goalData.dailyGoal - stats.todayOrders}
+                </div>
+                <div className="text-xs text-blue-500 dark:text-blue-500">to go</div>
+              </div>
+            )}
+          </div>
+          <div className="w-full bg-blue-200 dark:bg-blue-900 rounded-full h-2.5">
+            <div 
+              className="bg-gradient-to-r from-blue-500 to-indigo-500 h-2.5 rounded-full transition-all duration-500"
+              style={{ width: `${Math.min((stats.todayOrders / goalData.dailyGoal) * 100, 100)}%` }}
+            />
+          </div>
+        </div>
+
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-2xl p-5 shadow-sm border border-green-100 dark:border-green-900/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -134,7 +223,9 @@ export default function Dashboard() {
                 <div className="text-3xl font-extrabold text-green-600 dark:text-green-400">{commissionDisplay}</div>
               </div>
             </div>
-            <TrendingUp className="w-10 h-10 text-green-200 dark:text-green-800" />
+            <Link href="/calculator" className="p-2 bg-green-100 dark:bg-green-900/50 rounded-xl hover:bg-green-200 dark:hover:bg-green-800/50 transition-colors">
+              <Calculator className="w-6 h-6 text-green-600 dark:text-green-400" />
+            </Link>
           </div>
         </div>
 
