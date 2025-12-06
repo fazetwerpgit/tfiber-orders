@@ -67,8 +67,8 @@ export async function createOrder(data: CreateOrderData): Promise<CreateOrderRes
 
     const commissionAmount = commissionRate?.amount || 0;
 
-    // Insert the order with gamification fields
-    const { data: insertedOrder, error } = await adminClient.from('orders').insert({
+    // Base order data (without gamification fields)
+    const baseOrderData = {
       customer_name: data.customer_name,
       customer_phone: data.customer_phone,
       customer_email: data.customer_email || null,
@@ -87,10 +87,35 @@ export async function createOrder(data: CreateOrderData): Promise<CreateOrderRes
       status: 'new',
       commission_amount: commissionAmount,
       commission_paid: false,
-      // Gamification fields
+    };
+
+    // Try inserting with gamification fields first
+    let insertedOrder;
+    let error;
+
+    // First attempt: with gamification columns
+    const resultWithGamification = await adminClient.from('orders').insert({
+      ...baseOrderData,
       sale_type: data.sale_type || 'standard',
       add_ons_count: data.add_ons_count || 0,
     }).select().single();
+
+    if (resultWithGamification.error) {
+      // Check if it's a "column not found" error (gamification migrations not applied)
+      const errMsg = resultWithGamification.error.message || '';
+      if (errMsg.includes('add_ons_count') || errMsg.includes('sale_type') || errMsg.includes('schema cache')) {
+        console.log('Gamification columns not found, inserting without them...');
+        // Retry without gamification fields
+        const resultBasic = await adminClient.from('orders').insert(baseOrderData).select().single();
+        insertedOrder = resultBasic.data;
+        error = resultBasic.error;
+      } else {
+        // Different error, propagate it
+        error = resultWithGamification.error;
+      }
+    } else {
+      insertedOrder = resultWithGamification.data;
+    }
 
     if (error) {
       console.error('Order creation error:', error);
@@ -99,7 +124,7 @@ export async function createOrder(data: CreateOrderData): Promise<CreateOrderRes
 
     console.log('Order created successfully:', insertedOrder);
 
-    // Process gamification after successful order creation
+    // Process gamification after successful order creation (only if gamification is available)
     let gamificationResult: OrderGamificationResult | null = null;
     if (insertedOrder?.id) {
       try {
@@ -110,7 +135,8 @@ export async function createOrder(data: CreateOrderData): Promise<CreateOrderRes
         }
       } catch (gamificationError) {
         // Don't fail the order if gamification processing fails
-        console.error('Gamification processing error:', gamificationError);
+        // This is expected if gamification tables don't exist yet
+        console.log('Gamification not available:', gamificationError);
       }
     }
 

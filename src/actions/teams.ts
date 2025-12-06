@@ -574,3 +574,108 @@ export async function removeTeamMember(
     return { success: false, error: 'Failed to remove team member' };
   }
 }
+
+/**
+ * Get all users with their team assignments (admin/manager only)
+ */
+export async function getAllUsersWithTeams(): Promise<
+  ActionResult<{ id: string; name: string; email: string; team_id: string | null; team_name: string | null }[]>
+> {
+  try {
+    const hasAccess = await checkManagerAccess();
+    if (!hasAccess) {
+      return { success: false, error: 'Not authorized' };
+    }
+
+    const adminClient = createAdminClient();
+
+    // Get all users
+    const { data: users, error: usersError } = await adminClient
+      .from('users')
+      .select('id, name, email')
+      .order('name');
+
+    if (usersError) {
+      return { success: false, error: usersError.message };
+    }
+
+    // Get all team memberships
+    const { data: memberships } = await adminClient
+      .from('team_memberships')
+      .select('user_id, team_id');
+
+    // Get all teams
+    const { data: teams } = await adminClient
+      .from('teams')
+      .select('id, display_name')
+      .eq('is_active', true);
+
+    // Build user -> team mapping
+    const membershipMap: Record<string, string> = {};
+    for (const m of memberships || []) {
+      membershipMap[m.user_id] = m.team_id;
+    }
+
+    const teamNameMap: Record<string, string> = {};
+    for (const t of teams || []) {
+      teamNameMap[t.id] = t.display_name;
+    }
+
+    const result = (users || []).map((u) => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      team_id: membershipMap[u.id] || null,
+      team_name: membershipMap[u.id] ? teamNameMap[membershipMap[u.id]] || null : null,
+    }));
+
+    return { success: true, data: result };
+  } catch (e) {
+    console.error('getAllUsersWithTeams error:', e);
+    return { success: false, error: 'Failed to get users with teams' };
+  }
+}
+
+/**
+ * Assign a user to a team (admin/manager only) - replaces existing team if any
+ */
+export async function assignUserToTeam(
+  userId: string,
+  teamId: string | null
+): Promise<ActionResult<void>> {
+  try {
+    const hasAccess = await checkManagerAccess();
+    if (!hasAccess) {
+      return { success: false, error: 'Not authorized' };
+    }
+
+    const adminClient = createAdminClient();
+
+    // Remove existing team membership if any
+    await adminClient
+      .from('team_memberships')
+      .delete()
+      .eq('user_id', userId);
+
+    // If teamId is null, just remove from team (done above)
+    if (!teamId) {
+      return { success: true };
+    }
+
+    // Add to new team
+    const { error } = await adminClient.from('team_memberships').insert({
+      team_id: teamId,
+      user_id: userId,
+      role: 'member',
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (e) {
+    console.error('assignUserToTeam error:', e);
+    return { success: false, error: 'Failed to assign user to team' };
+  }
+}

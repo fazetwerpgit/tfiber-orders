@@ -3,12 +3,13 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, BarChart3, Users, FileText, DollarSign } from 'lucide-react';
+import { ArrowLeft, BarChart3, Users, FileText, DollarSign, Swords } from 'lucide-react';
 import { checkAdminStatus } from './actions';
 
 const navItems = [
   { href: '/admin', label: 'Dashboard', Icon: BarChart3 },
   { href: '/admin/users', label: 'Users', Icon: Users },
+  { href: '/admin/teams', label: 'Teams', Icon: Swords },
   { href: '/admin/orders', label: 'Orders', Icon: FileText },
   { href: '/admin/commissions', label: 'Commissions', Icon: DollarSign },
 ];
@@ -75,7 +76,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Header */}
       <header className="bg-gradient-to-r from-pink-600 to-pink-700 text-white px-4 py-4">
         <div className="flex items-center gap-3">
-          <Link href="/settings" className="p-2 -ml-2 hover:bg-pink-500/50 rounded-lg">
+          <Link href="/" className="p-2 -ml-2 hover:bg-pink-500/50 rounded-lg">
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <h1 className="text-xl font-bold">Admin Panel</h1>
