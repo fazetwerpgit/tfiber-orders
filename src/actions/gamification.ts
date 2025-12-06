@@ -8,6 +8,7 @@ import type {
   UserPoints,
   PointHistory,
   LeaderboardEntry,
+  LeaderboardBadge,
   TimeRange,
   OrderGamificationResult,
   PointsCalculationResult,
@@ -249,6 +250,44 @@ export async function getLeaderboard(
       }
     }
 
+    // Get user badges (up to 3 most recent per user)
+    const userBadges: Record<string, LeaderboardBadge[]> = {};
+    try {
+      const { data: badgesData } = await adminClient
+        .from('user_achievements')
+        .select(`
+          user_id,
+          achievement:achievements(id, icon, name)
+        `)
+        .in('user_id', userIds)
+        .order('earned_at', { ascending: false });
+
+      for (const row of badgesData || []) {
+        if (!userBadges[row.user_id]) {
+          userBadges[row.user_id] = [];
+        }
+        // Only keep first 3 badges per user
+        if (userBadges[row.user_id].length < 3 && row.achievement) {
+          // Handle both single object and array (depending on join type)
+          const achievementData = Array.isArray(row.achievement)
+            ? row.achievement[0]
+            : row.achievement;
+
+          if (achievementData && typeof achievementData === 'object') {
+            const achievement = achievementData as { id: string; icon: string | null; name: string };
+            userBadges[row.user_id].push({
+              id: achievement.id,
+              icon: achievement.icon,
+              name: achievement.name,
+            });
+          }
+        }
+      }
+    } catch (e) {
+      // Badges table may not exist yet, continue without badges
+      console.log('Could not fetch badges:', e);
+    }
+
     // Build user map
     const userMap: Record<string, string> = {};
     for (const u of usersData || []) {
@@ -266,6 +305,7 @@ export async function getLeaderboard(
         streak_days: streaks[uid] || 0,
         is_current_user: uid === user.id,
         rank_change: null as number | null,
+        badges: userBadges[uid] || [],
       }))
       .filter((e) => e.total_points > 0)
       .sort((a, b) => b.total_points - a.total_points)

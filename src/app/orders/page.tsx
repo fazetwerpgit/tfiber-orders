@@ -4,8 +4,8 @@ import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Plus, Search, ChevronRight, CheckCircle, ArrowLeft } from 'lucide-react';
-import { createClient } from '@/lib/supabase';
 import { Order, PLAN_NAMES, TIME_SLOT_LABELS } from '@/lib/types';
+import { getMyOrders } from './actions';
 
 const STATUS_COLORS: Record<string, string> = {
   new: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300',
@@ -39,16 +39,12 @@ function OrdersList() {
   }, []);
 
   const loadOrders = async () => {
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from('orders')
-      .select('*')
-      .order('created_at', { ascending: false });
+    const result = await getMyOrders();
 
-    if (error) {
-      console.error('Error loading orders:', error);
+    if (result.error) {
+      console.error('Error loading orders:', result.error);
     } else {
-      setOrders(data || []);
+      setOrders(result.data || []);
     }
     setLoading(false);
   };

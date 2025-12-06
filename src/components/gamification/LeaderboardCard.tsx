@@ -72,6 +72,20 @@ export function LeaderboardCard({
               You
             </span>
           )}
+          {/* Badge icons */}
+          {entry.badges && entry.badges.length > 0 && (
+            <div className="flex items-center gap-0.5">
+              {entry.badges.map((badge) => (
+                <span
+                  key={badge.id}
+                  title={badge.name}
+                  className="text-sm"
+                >
+                  {badge.icon || '🏆'}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Stats Row */}
@@ -157,13 +171,23 @@ export function LeaderboardCardCompact({
       </span>
       <span
         className={cn(
-          'flex-1 truncate text-sm',
+          'flex-1 truncate text-sm flex items-center gap-1',
           entry.is_current_user
             ? 'font-semibold text-pink-600 dark:text-pink-400'
             : 'text-gray-700 dark:text-gray-300'
         )}
       >
         {entry.user_name}
+        {/* Badge icons */}
+        {entry.badges && entry.badges.length > 0 && (
+          <span className="flex items-center gap-0.5 ml-1">
+            {entry.badges.slice(0, 2).map((badge) => (
+              <span key={badge.id} title={badge.name} className="text-xs">
+                {badge.icon || '🏆'}
+              </span>
+            ))}
+          </span>
+        )}
       </span>
       <span className="text-sm font-semibold text-gray-900 dark:text-white">
         {entry.total_points.toLocaleString()}

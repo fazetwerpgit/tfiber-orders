@@ -162,6 +162,13 @@ export interface StreakUpdateResult {
 /** Time range for leaderboard filtering */
 export type TimeRange = 'today' | 'week' | 'month' | 'all-time';
 
+/** Badge display info for leaderboard */
+export interface LeaderboardBadge {
+  id: string;
+  icon: string | null;
+  name: string;
+}
+
 /** Single leaderboard entry */
 export interface LeaderboardEntry {
   rank: number;
@@ -172,6 +179,7 @@ export interface LeaderboardEntry {
   streak_days: number;
   is_current_user: boolean;
   rank_change: number | null;
+  badges?: LeaderboardBadge[];
 }
 
 /** Leaderboard snapshot for tracking changes */
