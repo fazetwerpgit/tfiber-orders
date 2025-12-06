@@ -1,3 +1,9 @@
+// Re-export gamification types
+export * from './types/gamification';
+
+// Import SaleType for use in Order interface below
+import type { SaleType } from './types/gamification';
+
 // T-Mobile Fiber Plans
 export type PlanType = 'fiber_500' | 'fiber_1gig' | 'fiber_2gig' | 'founders_club';
 
@@ -105,6 +111,9 @@ export interface Order {
   status: OrderStatus;
   commission_amount: number | null;
   commission_paid: boolean;
+  // Gamification fields
+  sale_type: SaleType;
+  add_ons_count: number;
   created_at: string;
   updated_at: string;
 }

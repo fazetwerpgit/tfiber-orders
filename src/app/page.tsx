@@ -1,26 +1,25 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, FileText, Users, Settings, TrendingUp, DollarSign, LogOut, Flame, Target, Trophy, Calculator, Award } from 'lucide-react';
+import { Plus, FileText, Users, Settings, TrendingUp, DollarSign, LogOut, Trophy, Flame, Swords, BarChart3, Award, Calculator } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { Order, PLAN_NAMES } from '@/lib/types';
+import type { LeaderboardEntry, UserPoints } from '@/lib/types';
 import { TFiberLogo } from '@/components/branding/t-fiber-logo';
+import { getLeaderboard, getUserPoints } from '@/actions/gamification';
+import {
+  PointsDisplay,
+  StreakIndicator,
+  LeaderboardWidget,
+} from '@/components/gamification';
 
 interface Stats {
   todayOrders: number;
   weekOrders: number;
   monthOrders: number;
   pendingCommission: number;
-}
-
-interface GoalData {
-  dailyGoal: number;
-  weeklyGoal: number;
-  monthlyGoal: number;
-  currentStreak: number;
-  longestStreak: number;
 }
 
 export default function Dashboard() {
@@ -34,13 +33,12 @@ export default function Dashboard() {
   });
   const [recentOrders, setRecentOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [goalData, setGoalData] = useState<GoalData>({
-    dailyGoal: 3,
-    weeklyGoal: 15,
-    monthlyGoal: 50,
-    currentStreak: 0,
-    longestStreak: 0,
-  });
+  const [userPoints, setUserPoints] = useState<UserPoints | null>(null);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
 
   const checkAuth = async () => {
     const supabase = createClient();
@@ -65,10 +63,14 @@ export default function Dashboard() {
     const weekAgo = new Date(today);
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const { data: orders } = await supabase
-      .from('orders')
-      .select('*')
-      .order('created_at', { ascending: false });
+    // Load orders and gamification data in parallel
+    const [ordersResult, pointsResult, leaderboardResult] = await Promise.all([
+      supabase.from('orders').select('*').order('created_at', { ascending: false }),
+      getUserPoints(),
+      getLeaderboard('week', 10),
+    ]);
+
+    const orders = ordersResult.data;
 
     if (orders) {
       const todayOrders = orders.filter(o => new Date(o.created_at) >= today);
@@ -87,30 +89,12 @@ export default function Dashboard() {
       setRecentOrders(orders.slice(0, 5));
     }
 
-    // Load goals and streaks
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data: goals } = await supabase
-        .from('user_goals')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
+    if (pointsResult.success && pointsResult.data) {
+      setUserPoints(pointsResult.data);
+    }
 
-      const { data: streak } = await supabase
-        .from('user_streaks')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
-
-      if (goals || streak) {
-        setGoalData({
-          dailyGoal: goals?.daily_goal || 3,
-          weeklyGoal: goals?.weekly_goal || 15,
-          monthlyGoal: goals?.monthly_goal || 50,
-          currentStreak: streak?.current_streak || 0,
-          longestStreak: streak?.longest_streak || 0,
-        });
-      }
+    if (leaderboardResult.success && leaderboardResult.data) {
+      setLeaderboard(leaderboardResult.data);
     }
   };
 
@@ -119,11 +103,6 @@ export default function Dashboard() {
     await supabase.auth.signOut();
     router.push('/login');
   };
-
-  useEffect(() => {
-    checkAuth();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   if (loading) {
     return (
@@ -134,10 +113,11 @@ export default function Dashboard() {
   }
 
   const commissionDisplay = `$${stats.pendingCommission.toFixed(2)}`;
+  const currentUserRank = leaderboard.find(e => e.is_current_user)?.rank || 0;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 pb-24">
-      <header className="bg-gradient-to-br from-pink-600 via-pink-600 to-pink-700 text-white px-4 py-6">
+      <header className="bg-gradient-to-br from-pink-600 via-pink-600 to-purple-700 text-white px-4 py-6">
         <div className="flex items-center justify-between mb-5">
           <TFiberLogo variant="full" size="sm" theme="dark" />
           <div className="flex items-center gap-2">
@@ -148,6 +128,29 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Points & Streak Row */}
+        {userPoints && (
+          <div className="flex items-center gap-4 mb-4">
+            <div className="flex-1 bg-white/15 backdrop-blur-sm rounded-2xl p-3 flex items-center gap-3">
+              <PointsDisplay
+                points={userPoints.total_points}
+                size="md"
+                variant="gold"
+                showLabel
+                showIcon
+              />
+            </div>
+            <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-3 flex items-center gap-2">
+              <StreakIndicator
+                days={userPoints.streak_days}
+                size="md"
+                showLabel
+                animate={userPoints.streak_days > 0}
+              />
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-4 text-center">
             <div className="text-3xl font-extrabold">{stats.todayOrders}</div>
@@ -157,61 +160,20 @@ export default function Dashboard() {
             <div className="text-3xl font-extrabold">{stats.weekOrders}</div>
             <div className="text-xs text-pink-200 font-medium mt-1">This Week</div>
           </div>
-          <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-4 text-center">
-            <div className="text-3xl font-extrabold">{stats.monthOrders}</div>
-            <div className="text-xs text-pink-200 font-medium mt-1">Total</div>
-          </div>
-        </div>
-
-        {/* Streak Badge */}
-        {goalData.currentStreak > 0 && (
-          <div className="mt-4 flex items-center justify-center gap-2 bg-gradient-to-r from-orange-500/30 to-red-500/30 rounded-xl py-2 px-4">
-            <Flame className="w-5 h-5 text-orange-300" />
-            <span className="font-bold text-white">{goalData.currentStreak} Day Streak!</span>
-            {goalData.currentStreak >= goalData.longestStreak && goalData.currentStreak > 1 && (
-              <span className="text-xs bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full font-bold">BEST</span>
+          <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-4 text-center relative">
+            <div className="text-3xl font-extrabold">
+              {currentUserRank > 0 ? `#${currentUserRank}` : '--'}
+            </div>
+            <div className="text-xs text-pink-200 font-medium mt-1">Rank</div>
+            {currentUserRank > 0 && currentUserRank <= 3 && (
+              <Trophy className="absolute top-2 right-2 w-4 h-4 text-yellow-300" />
             )}
           </div>
-        )}
+        </div>
       </header>
 
       <main className="p-4 space-y-4">
-        {/* Daily Goal Progress */}
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-2xl p-5 shadow-sm border border-blue-100 dark:border-blue-900/50">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30">
-                <Target className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <div className="text-sm text-blue-700 dark:text-blue-400 font-medium">Daily Goal</div>
-                <div className="text-xl font-extrabold text-blue-600 dark:text-blue-400">
-                  {stats.todayOrders} / {goalData.dailyGoal}
-                </div>
-              </div>
-            </div>
-            {stats.todayOrders >= goalData.dailyGoal ? (
-              <div className="flex items-center gap-1 bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 px-3 py-1 rounded-full">
-                <Trophy className="w-4 h-4" />
-                <span className="text-sm font-bold">Done!</span>
-              </div>
-            ) : (
-              <div className="text-right">
-                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                  {goalData.dailyGoal - stats.todayOrders}
-                </div>
-                <div className="text-xs text-blue-500 dark:text-blue-500">to go</div>
-              </div>
-            )}
-          </div>
-          <div className="w-full bg-blue-200 dark:bg-blue-900 rounded-full h-2.5">
-            <div 
-              className="bg-gradient-to-r from-blue-500 to-indigo-500 h-2.5 rounded-full transition-all duration-500"
-              style={{ width: `${Math.min((stats.todayOrders / goalData.dailyGoal) * 100, 100)}%` }}
-            />
-          </div>
-        </div>
-
+        {/* Commission Card */}
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-2xl p-5 shadow-sm border border-green-100 dark:border-green-900/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -229,6 +191,7 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Action Buttons */}
         <div className="grid grid-cols-2 gap-4">
           <Link href="/orders/new" className="bg-gradient-to-r from-pink-600 to-pink-700 text-white rounded-2xl p-5 flex items-center gap-3 hover:from-pink-700 hover:to-pink-800 transition-all shadow-lg shadow-pink-500/30">
             <Plus className="w-7 h-7" strokeWidth={2.5} />
@@ -240,28 +203,39 @@ export default function Dashboard() {
           </Link>
         </div>
 
-        {/* Quick Links */}
-        <div className="grid grid-cols-2 gap-3">
-          <Link href="/badges" className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl p-4 flex items-center gap-3 border border-purple-100 dark:border-purple-900/50">
-            <div className="w-10 h-10 bg-purple-500 rounded-xl flex items-center justify-center">
-              <Award className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <div className="font-semibold text-gray-900 dark:text-white">Badges</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">View achievements</div>
-            </div>
+        {/* Quick Access */}
+        <div className="grid grid-cols-3 gap-3">
+          <Link
+            href="/achievements"
+            className="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 text-center hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors border border-amber-100 dark:border-amber-900/50"
+          >
+            <Award className="w-6 h-6 text-amber-600 mx-auto mb-1" />
+            <span className="text-sm font-medium text-amber-900 dark:text-amber-100">Achievements</span>
           </Link>
-          <Link href="/team" className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-xl p-4 flex items-center gap-3 border border-blue-100 dark:border-blue-900/50">
-            <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center">
-              <Trophy className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <div className="font-semibold text-gray-900 dark:text-white">Leaderboard</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Team rankings</div>
-            </div>
+          <Link
+            href="/battles"
+            className="bg-purple-50 dark:bg-purple-900/20 rounded-xl p-4 text-center hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors border border-purple-100 dark:border-purple-900/50"
+          >
+            <Swords className="w-6 h-6 text-purple-600 mx-auto mb-1" />
+            <span className="text-sm font-medium text-purple-900 dark:text-purple-100">Battles</span>
+          </Link>
+          <Link
+            href="/reports"
+            className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 text-center hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors border border-blue-100 dark:border-blue-900/50"
+          >
+            <BarChart3 className="w-6 h-6 text-blue-600 mx-auto mb-1" />
+            <span className="text-sm font-medium text-blue-900 dark:text-blue-100">Reports</span>
           </Link>
         </div>
 
+        {/* Leaderboard Widget */}
+        <LeaderboardWidget
+          entries={leaderboard}
+          timeRange="week"
+          onViewAll={() => router.push('/team')}
+        />
+
+        {/* Recent Orders */}
         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm overflow-hidden">
           <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-800">
             <h2 className="font-bold text-gray-900 dark:text-white text-lg">Recent Orders</h2>
@@ -309,8 +283,8 @@ export default function Dashboard() {
             <Plus className="w-8 h-8 text-white" strokeWidth={2.5} />
           </Link>
           <Link href="/team" className="flex flex-col items-center py-2 px-3 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
-            <Users className="w-6 h-6" />
-            <span className="text-xs mt-1 font-medium">Team</span>
+            <Trophy className="w-6 h-6" />
+            <span className="text-xs mt-1 font-medium">Ranks</span>
           </Link>
           <Link href="/settings" className="flex flex-col items-center py-2 px-3 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
             <Settings className="w-6 h-6" />

@@ -3,15 +3,25 @@
 import { createAdminClient } from '@/lib/supabase-admin';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
-import { OrderFormData, PricingTier } from '@/lib/types';
+import { OrderFormData, PricingTier, SaleType, OrderGamificationResult } from '@/lib/types';
+import { processOrderForGamification } from '@/actions/gamification';
 
-// Extended type that includes computed pricing fields
+// Extended type that includes computed pricing fields and gamification data
 interface CreateOrderData extends OrderFormData {
   pricing_tier: PricingTier;
   monthly_price: number;
+  sale_type?: SaleType;
+  add_ons_count?: number;
 }
 
-export async function createOrder(data: CreateOrderData): Promise<{ success: boolean; error?: string }> {
+interface CreateOrderResult {
+  success: boolean;
+  error?: string;
+  orderId?: string;
+  gamification?: OrderGamificationResult | null;
+}
+
+export async function createOrder(data: CreateOrderData): Promise<CreateOrderResult> {
   try {
     // Authenticate user server-side
     const cookieStore = await cookies();
@@ -57,7 +67,7 @@ export async function createOrder(data: CreateOrderData): Promise<{ success: boo
 
     const commissionAmount = commissionRate?.amount || 0;
 
-    // Insert the order
+    // Insert the order with gamification fields
     const { data: insertedOrder, error } = await adminClient.from('orders').insert({
       customer_name: data.customer_name,
       customer_phone: data.customer_phone,
@@ -77,7 +87,10 @@ export async function createOrder(data: CreateOrderData): Promise<{ success: boo
       status: 'new',
       commission_amount: commissionAmount,
       commission_paid: false,
-    }).select();
+      // Gamification fields
+      sale_type: data.sale_type || 'standard',
+      add_ons_count: data.add_ons_count || 0,
+    }).select().single();
 
     if (error) {
       console.error('Order creation error:', error);
@@ -85,7 +98,27 @@ export async function createOrder(data: CreateOrderData): Promise<{ success: boo
     }
 
     console.log('Order created successfully:', insertedOrder);
-    return { success: true };
+
+    // Process gamification after successful order creation
+    let gamificationResult: OrderGamificationResult | null = null;
+    if (insertedOrder?.id) {
+      try {
+        const gamificationResponse = await processOrderForGamification(insertedOrder.id);
+        if (gamificationResponse.success && gamificationResponse.data) {
+          gamificationResult = gamificationResponse.data;
+          console.log('Gamification processed:', gamificationResult);
+        }
+      } catch (gamificationError) {
+        // Don't fail the order if gamification processing fails
+        console.error('Gamification processing error:', gamificationError);
+      }
+    }
+
+    return {
+      success: true,
+      orderId: insertedOrder?.id,
+      gamification: gamificationResult,
+    };
   } catch (e) {
     console.error('Unexpected error in createOrder:', e);
     return { error: 'An unexpected error occurred. Please try again.', success: false };

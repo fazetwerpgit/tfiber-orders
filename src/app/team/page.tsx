@@ -1,218 +1,144 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Trophy, Medal, TrendingUp, Flame, DollarSign, BarChart3 } from 'lucide-react';
-import { createClient } from '@/lib/supabase';
-
-interface LeaderboardEntry {
-  id: string;
-  name: string;
-  email: string;
-  order_count: number;
-  total_commission: number;
-  avg_commission: number;
-  current_streak: number;
-}
-
-type TimeRange = 'today' | 'week' | 'month' | 'all';
-type SortBy = 'orders' | 'commission' | 'streak';
+import { ArrowLeft, Trophy, Sparkles, TrendingUp, RefreshCw } from 'lucide-react';
+import { getLeaderboard, getUserPoints } from '@/actions/gamification';
+import {
+  LeaderboardList,
+  PointsDisplay,
+  StreakCard,
+} from '@/components/gamification';
+import type { LeaderboardEntry, TimeRange, UserPoints } from '@/lib/types';
 
 export default function TeamPage() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [userPoints, setUserPoints] = useState<UserPoints | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [timeRange, setTimeRange] = useState<TimeRange>('week');
-  const [sortBy, setSortBy] = useState<SortBy>('orders');
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  const loadLeaderboard = async () => {
-    setLoading(true);
-    const supabase = createClient();
-
-    // Get current user
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) setCurrentUserId(user.id);
-
-    // Calculate date range
-    const now = new Date();
-    let startDate = new Date(0); // Default to all time
-
-    if (timeRange === 'today') {
-      startDate = new Date();
-      startDate.setHours(0, 0, 0, 0);
-    } else if (timeRange === 'week') {
-      startDate = new Date();
-      startDate.setDate(now.getDate() - 7);
-    } else if (timeRange === 'month') {
-      startDate = new Date();
-      startDate.setMonth(now.getMonth() - 1);
+  const loadData = useCallback(async (showRefresh = false) => {
+    if (showRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
     }
 
-    // Get all users
-    const { data: users } = await supabase
-      .from('users')
-      .select('id, name, email');
+    try {
+      const [leaderboardResult, pointsResult] = await Promise.all([
+        getLeaderboard(timeRange),
+        getUserPoints(),
+      ]);
 
-    // Get streaks for all users
-    const { data: streaks } = await supabase
-      .from('user_streaks')
-      .select('user_id, current_streak');
-
-    const streakMap = new Map<string, number>();
-    streaks?.forEach(s => streakMap.set(s.user_id, s.current_streak || 0));
-
-    // Get orders within date range
-    let ordersQuery = supabase
-      .from('orders')
-      .select('salesperson_id, commission_amount')
-      .neq('status', 'cancelled');
-
-    if (timeRange !== 'all') {
-      ordersQuery = ordersQuery.gte('created_at', startDate.toISOString());
-    }
-
-    const { data: orders } = await ordersQuery;
-
-    if (users && orders) {
-      const leaderboardData: LeaderboardEntry[] = users.map(user => {
-        const userOrders = orders.filter(o => o.salesperson_id === user.id);
-        const totalCommission = userOrders.reduce((sum, o) => sum + (o.commission_amount || 0), 0);
-        return {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          order_count: userOrders.length,
-          total_commission: totalCommission,
-          avg_commission: userOrders.length > 0 ? totalCommission / userOrders.length : 0,
-          current_streak: streakMap.get(user.id) || 0,
-        };
-      });
-
-      // Sort based on selected metric
-      if (sortBy === 'orders') {
-        leaderboardData.sort((a, b) => b.order_count - a.order_count);
-      } else if (sortBy === 'commission') {
-        leaderboardData.sort((a, b) => b.total_commission - a.total_commission);
-      } else if (sortBy === 'streak') {
-        leaderboardData.sort((a, b) => b.current_streak - a.current_streak);
+      if (leaderboardResult.success && leaderboardResult.data) {
+        setLeaderboard(leaderboardResult.data);
       }
 
-      setLeaderboard(leaderboardData);
+      if (pointsResult.success && pointsResult.data) {
+        setUserPoints(pointsResult.data);
+      }
+    } catch (error) {
+      console.error('Failed to load data:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-
-    setLoading(false);
-  };
+  }, [timeRange]);
 
   useEffect(() => {
-    loadLeaderboard();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeRange, sortBy]);
+    loadData();
+  }, [loadData]);
 
-  const getRankStyle = (index: number) => {
-    if (index === 0) return 'bg-gradient-to-r from-yellow-400 to-yellow-500 text-yellow-900';
-    if (index === 1) return 'bg-gradient-to-r from-gray-300 to-gray-400 text-gray-800';
-    if (index === 2) return 'bg-gradient-to-r from-amber-600 to-amber-700 text-amber-100';
-    return 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400';
+  // Poll for updates every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => loadData(true), 30000);
+    return () => clearInterval(interval);
+  }, [loadData]);
+
+  const handleTimeRangeChange = (range: TimeRange) => {
+    setTimeRange(range);
   };
 
-  const getRankIcon = (index: number) => {
-    if (index === 0) return <Trophy className="w-5 h-5" />;
-    if (index === 1) return <Medal className="w-5 h-5" />;
-    if (index === 2) return <Medal className="w-5 h-5" />;
-    return <span className="text-sm font-bold">#{index + 1}</span>;
+  const handleRefresh = () => {
+    loadData(true);
   };
 
-  const currentUserRank = leaderboard.findIndex(e => e.id === currentUserId) + 1;
-  const currentUserEntry = leaderboard.find(e => e.id === currentUserId);
+  const currentUserEntry = leaderboard.find((e) => e.is_current_user);
+  const currentUserRank = currentUserEntry?.rank || 0;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 pb-6">
       {/* Header */}
-      <header className="bg-gradient-to-r from-pink-600 to-pink-700 text-white px-4 py-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Link href="/" className="p-2 -ml-2 hover:bg-pink-500/50 rounded-lg">
-            <ArrowLeft className="w-5 h-5" />
-          </Link>
-          <h1 className="text-xl font-bold">Team Leaderboard</h1>
-        </div>
-
-        {/* Time Range Selector */}
-        <div className="flex gap-2 mb-3">
-          {(['today', 'week', 'month', 'all'] as TimeRange[]).map((range) => (
-            <button
-              key={range}
-              onClick={() => setTimeRange(range)}
-              className={`px-3 py-1.5 rounded-lg font-medium text-sm transition-colors ${
-                timeRange === range
-                  ? 'bg-white text-pink-600'
-                  : 'bg-pink-500/30 text-white hover:bg-pink-500/50'
-              }`}
-            >
-              {range === 'today' ? 'Today' : range === 'week' ? 'Week' : range === 'month' ? 'Month' : 'All'}
-            </button>
-          ))}
-        </div>
-
-        {/* Sort By Selector */}
-        <div className="flex gap-2">
+      <header className="bg-gradient-to-r from-pink-600 to-purple-600 text-white px-4 py-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <Link href="/" className="p-2 -ml-2 hover:bg-white/10 rounded-lg transition-colors">
+              <ArrowLeft className="w-5 h-5" />
+            </Link>
+            <div>
+              <h1 className="text-xl font-bold flex items-center gap-2">
+                <Trophy className="w-5 h-5" />
+                Leaderboard
+              </h1>
+              <p className="text-sm text-pink-100 opacity-80">Points-based rankings</p>
+            </div>
+          </div>
           <button
-            onClick={() => setSortBy('orders')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm transition-colors ${
-              sortBy === 'orders'
-                ? 'bg-white/20 text-white'
-                : 'text-pink-200 hover:text-white'
-            }`}
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="p-2 hover:bg-white/10 rounded-lg transition-colors disabled:opacity-50"
           >
-            <BarChart3 className="w-4 h-4" />
-            Orders
-          </button>
-          <button
-            onClick={() => setSortBy('commission')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm transition-colors ${
-              sortBy === 'commission'
-                ? 'bg-white/20 text-white'
-                : 'text-pink-200 hover:text-white'
-            }`}
-          >
-            <DollarSign className="w-4 h-4" />
-            Commission
-          </button>
-          <button
-            onClick={() => setSortBy('streak')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm transition-colors ${
-              sortBy === 'streak'
-                ? 'bg-white/20 text-white'
-                : 'text-pink-200 hover:text-white'
-            }`}
-          >
-            <Flame className="w-4 h-4" />
-            Streaks
+            <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </header>
 
-      {/* Current User Rank Card */}
-      {currentUserEntry && (
-        <div className="mx-4 -mt-4 bg-white dark:bg-gray-900 rounded-xl p-4 shadow-lg border-2 border-pink-200 dark:border-pink-800">
+      {/* Current User Stats Card */}
+      {userPoints && (
+        <div className="mx-4 -mt-4 bg-white dark:bg-gray-900 rounded-xl p-4 shadow-lg border-2 border-pink-200 dark:border-pink-800 mb-4">
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm text-gray-500 dark:text-gray-400">Your Rank</div>
-              <div className="text-3xl font-bold text-pink-600 dark:text-pink-400">#{currentUserRank}</div>
+              <div className="text-3xl font-bold text-pink-600 dark:text-pink-400">
+                {currentUserRank > 0 ? `#${currentUserRank}` : '--'}
+              </div>
             </div>
             <div className="text-right">
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">{currentUserEntry.order_count}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">orders</div>
-            </div>
-            <div className="text-right">
-              <div className="text-xl font-bold text-green-600 dark:text-green-400">${currentUserEntry.total_commission.toFixed(0)}</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">commission</div>
+              <PointsDisplay
+                points={userPoints.total_points}
+                size="lg"
+                variant="gradient"
+                showLabel
+                showIcon={false}
+              />
             </div>
           </div>
-          {currentUserRank > 1 && (
+
+          {/* Streak & Progress */}
+          <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800 grid grid-cols-2 gap-4">
+            <div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Current Streak</div>
+              <div className="flex items-center gap-2">
+                <span className="text-2xl font-bold text-orange-500">
+                  {userPoints.streak_days}
+                </span>
+                <span className="text-sm text-gray-500 dark:text-gray-400">days</span>
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Lifetime Points</div>
+              <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                {userPoints.lifetime_points.toLocaleString()}
+              </div>
+            </div>
+          </div>
+
+          {currentUserRank > 1 && currentUserEntry && leaderboard[currentUserRank - 2] && (
             <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center gap-2 text-sm">
               <TrendingUp className="w-4 h-4 text-pink-600 dark:text-pink-400" />
               <span className="text-gray-600 dark:text-gray-400">
-                {leaderboard[currentUserRank - 2].order_count - currentUserEntry.order_count + 1} more orders to reach #{currentUserRank - 1}!
+                {leaderboard[currentUserRank - 2].total_points - currentUserEntry.total_points + 1} more points to reach #{currentUserRank - 1}!
               </span>
             </div>
           )}
@@ -220,54 +146,32 @@ export default function TeamPage() {
       )}
 
       {/* Leaderboard */}
-      <main className="p-4 space-y-3">
-        {loading ? (
-          <div className="text-center py-8 text-gray-500 dark:text-gray-400">Loading leaderboard...</div>
-        ) : leaderboard.length === 0 ? (
-          <div className="text-center py-8 text-gray-500 dark:text-gray-400">No team members yet</div>
-        ) : (
-          leaderboard.map((entry, index) => (
-            <div
-              key={entry.id}
-              className={`bg-white dark:bg-gray-900 rounded-xl p-4 shadow-sm flex items-center gap-4 ${
-                entry.id === currentUserId ? 'ring-2 ring-pink-400' : ''
-              }`}
-            >
-              {/* Rank Badge */}
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${getRankStyle(index)}`}>
-                {getRankIcon(index)}
-              </div>
-
-              {/* Name & Email */}
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-gray-900 dark:text-white truncate">
-                  {entry.name}
-                  {entry.id === currentUserId && (
-                    <span className="ml-2 text-xs bg-pink-100 dark:bg-pink-900/50 text-pink-600 dark:text-pink-300 px-2 py-0.5 rounded-full">You</span>
-                  )}
-                </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400 truncate">{entry.email}</div>
-              </div>
-
-              {/* Stats */}
-              <div className="text-right">
-                <div className="text-xl font-bold text-gray-900 dark:text-white">{entry.order_count}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">orders</div>
-              </div>
-              <div className="text-right">
-                <div className="text-lg font-bold text-green-600 dark:text-green-400">${entry.total_commission.toFixed(0)}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">earned</div>
-              </div>
-              {entry.current_streak > 0 && (
-                <div className="flex items-center gap-1 bg-orange-100 dark:bg-orange-900/30 px-2 py-1 rounded-full">
-                  <Flame className="w-4 h-4 text-orange-500" />
-                  <span className="text-sm font-bold text-orange-600 dark:text-orange-400">{entry.current_streak}</span>
-                </div>
-              )}
-            </div>
-          ))
-        )}
+      <main className="px-4">
+        <LeaderboardList
+          entries={leaderboard}
+          isLoading={loading}
+          timeRange={timeRange}
+          onTimeRangeChange={handleTimeRangeChange}
+          showPodium={leaderboard.length >= 3}
+          emptyMessage="No sales recorded for this period yet. Be the first!"
+        />
       </main>
+
+      {/* Info Banner */}
+      <div className="mx-4 mt-6 p-4 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30 rounded-xl border border-purple-200 dark:border-purple-800">
+        <div className="flex items-start gap-3">
+          <Sparkles className="w-5 h-5 text-purple-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <h3 className="font-semibold text-gray-900 dark:text-white text-sm">
+              How Points Work
+            </h3>
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+              Standard sales earn 10 pts, upgrades 20 pts, multi-service 30 pts.
+              Add-ons earn 5 pts each. Keep your streak going for bonus points!
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
