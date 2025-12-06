@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, FileText, Users, Settings, TrendingUp, DollarSign, LogOut, Flame, Target, Trophy, Calculator } from 'lucide-react';
+import { Plus, FileText, Users, Settings, TrendingUp, DollarSign, LogOut, Flame, Target, Trophy, Calculator, Award } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { Order, PLAN_NAMES } from '@/lib/types';
 import { TFiberLogo } from '@/components/branding/t-fiber-logo';
@@ -237,6 +237,28 @@ export default function Dashboard() {
           <Link href="/orders" className="bg-white dark:bg-gray-900 rounded-2xl p-5 flex items-center gap-3 shadow-sm hover:shadow-lg transition-all border border-gray-100 dark:border-gray-800">
             <FileText className="w-7 h-7 text-gray-500 dark:text-gray-400" />
             <span className="font-bold text-lg text-gray-900 dark:text-white">View Orders</span>
+          </Link>
+        </div>
+
+        {/* Quick Links */}
+        <div className="grid grid-cols-2 gap-3">
+          <Link href="/badges" className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-xl p-4 flex items-center gap-3 border border-purple-100 dark:border-purple-900/50">
+            <div className="w-10 h-10 bg-purple-500 rounded-xl flex items-center justify-center">
+              <Award className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="font-semibold text-gray-900 dark:text-white">Badges</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">View achievements</div>
+            </div>
+          </Link>
+          <Link href="/team" className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-xl p-4 flex items-center gap-3 border border-blue-100 dark:border-blue-900/50">
+            <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center">
+              <Trophy className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="font-semibold text-gray-900 dark:text-white">Leaderboard</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Team rankings</div>
+            </div>
           </Link>
         </div>
 

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, User, Mail, Shield, DollarSign, LogOut, ChevronRight, Edit2, Check, X, Sun, Moon, Monitor } from 'lucide-react';
+import { ArrowLeft, User, Mail, Shield, DollarSign, LogOut, ChevronRight, Edit2, Check, X, Sun, Moon, Monitor, Target } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { PLAN_NAMES } from '@/lib/types';
 import { useTheme } from '@/lib/theme-context';
@@ -20,6 +20,12 @@ interface CommissionRate {
   amount: number;
 }
 
+interface UserGoals {
+  daily_goal: number;
+  weekly_goal: number;
+  monthly_goal: number;
+}
+
 export default function SettingsPage() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
@@ -29,44 +35,83 @@ export default function SettingsPage() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
   const [saving, setSaving] = useState(false);
+  const [goals, setGoals] = useState<UserGoals>({ daily_goal: 3, weekly_goal: 15, monthly_goal: 50 });
+  const [isEditingGoals, setIsEditingGoals] = useState(false);
+  const [editedGoals, setEditedGoals] = useState<UserGoals>({ daily_goal: 3, weekly_goal: 15, monthly_goal: 50 });
 
   useEffect(() => {
+    const loadSettings = async () => {
+      const supabase = createClient();
+
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+
+      // Get user profile
+      const { data: profileData } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (profileData) {
+        setProfile(profileData);
+        setEditedName(profileData.name);
+      }
+
+      // Get commission rates
+      const { data: rates } = await supabase
+        .from('commission_rates')
+        .select('*')
+        .order('amount', { ascending: true });
+
+      if (rates) {
+        setCommissionRates(rates);
+      }
+
+      // Get user goals
+      const { data: goalsData } = await supabase
+        .from('user_goals')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (goalsData) {
+        setGoals(goalsData);
+        setEditedGoals(goalsData);
+      }
+
+      setLoading(false);
+    };
+
     loadSettings();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadSettings = async () => {
+  const handleSaveGoals = async () => {
+    if (!profile) return;
+    setSaving(true);
     const supabase = createClient();
 
-    // Get current user
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      router.push('/login');
-      return;
+    const { error } = await supabase
+      .from('user_goals')
+      .upsert({
+        user_id: profile.id,
+        daily_goal: editedGoals.daily_goal,
+        weekly_goal: editedGoals.weekly_goal,
+        monthly_goal: editedGoals.monthly_goal,
+      });
+
+    if (!error) {
+      setGoals(editedGoals);
+      setIsEditingGoals(false);
+    } else {
+      alert('Failed to update goals. Please try again.');
     }
-
-    // Get user profile
-    const { data: profileData } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-
-    if (profileData) {
-      setProfile(profileData);
-      setEditedName(profileData.name);
-    }
-
-    // Get commission rates
-    const { data: rates } = await supabase
-      .from('commission_rates')
-      .select('*')
-      .order('amount', { ascending: true });
-
-    if (rates) {
-      setCommissionRates(rates);
-    }
-
-    setLoading(false);
+    setSaving(false);
   };
 
   const handleSaveName = async () => {
@@ -189,6 +234,70 @@ export default function SettingsPage() {
                 </Link>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* Sales Goals Section */}
+        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+            <h2 className="font-semibold text-gray-900 dark:text-white">Sales Goals</h2>
+            {!isEditingGoals ? (
+              <button
+                onClick={() => setIsEditingGoals(true)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+              >
+                <Edit2 className="w-4 h-4" />
+              </button>
+            ) : (
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSaveGoals}
+                  disabled={saving}
+                  className="p-1.5 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg hover:bg-green-200"
+                >
+                  <Check className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => {
+                    setIsEditingGoals(false);
+                    setEditedGoals(goals);
+                  }}
+                  className="p-1.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-200"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="p-4 space-y-4">
+            {[
+              { key: 'daily_goal' as const, label: 'Daily Goal', desc: 'Orders per day' },
+              { key: 'weekly_goal' as const, label: 'Weekly Goal', desc: 'Orders per week' },
+              { key: 'monthly_goal' as const, label: 'Monthly Goal', desc: 'Orders per month' },
+            ].map(({ key, label, desc }) => (
+              <div key={key} className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
+                    <Target className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-gray-900 dark:text-white">{label}</div>
+                    <div className="text-xs text-gray-500">{desc}</div>
+                  </div>
+                </div>
+                {isEditingGoals ? (
+                  <input
+                    type="number"
+                    min="1"
+                    value={editedGoals[key]}
+                    onChange={(e) => setEditedGoals(prev => ({ ...prev, [key]: parseInt(e.target.value) || 1 }))}
+                    className="w-20 px-3 py-2 border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-white rounded-lg text-center font-bold"
+                  />
+                ) : (
+                  <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">{goals[key]}</span>
+                )}
+              </div>
+            ))}
           </div>
         </div>
 

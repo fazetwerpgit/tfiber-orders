@@ -37,50 +37,50 @@ export default function CalculatorPage() {
   });
   const [loading, setLoading] = useState(true);
 
-  const loadData = async () => {
-    const supabase = createClient();
-
-    // Get commission rates
-    const { data: commissionRates } = await supabase
-      .from('commission_rates')
-      .select('*');
-
-    if (commissionRates) {
-      const ratesMap: CommissionRates = {};
-      commissionRates.forEach(r => {
-        ratesMap[r.plan_type] = r.amount;
-      });
-      setRates(prev => ({ ...prev, ...ratesMap }));
-    }
-
-    // Get current month stats
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data: orders } = await supabase
-        .from('orders')
-        .select('commission_amount, plan_type')
-        .eq('salesperson_id', user.id)
-        .neq('status', 'cancelled')
-        .gte('created_at', monthStart.toISOString());
-
-      if (orders) {
-        const totalCommission = orders.reduce((sum, o) => sum + (o.commission_amount || 0), 0);
-        setCurrentStats({
-          monthOrders: orders.length,
-          monthCommission: totalCommission,
-          avgPerOrder: orders.length > 0 ? totalCommission / orders.length : 0,
-        });
-      }
-    }
-
-    setLoading(false);
-  };
-
   useEffect(() => {
+    const loadData = async () => {
+      const supabase = createClient();
+
+      // Get commission rates
+      const { data: commissionRates } = await supabase
+        .from('commission_rates')
+        .select('*');
+
+      if (commissionRates) {
+        const ratesMap: CommissionRates = {};
+        commissionRates.forEach(r => {
+          ratesMap[r.plan_type] = r.amount;
+        });
+        setRates(prev => ({ ...prev, ...ratesMap }));
+      }
+
+      // Get current month stats
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: orders } = await supabase
+          .from('orders')
+          .select('commission_amount, plan_type')
+          .eq('salesperson_id', user.id)
+          .neq('status', 'cancelled')
+          .gte('created_at', monthStart.toISOString());
+
+        if (orders) {
+          const totalCommission = orders.reduce((sum, o) => sum + (o.commission_amount || 0), 0);
+          setCurrentStats({
+            monthOrders: orders.length,
+            monthCommission: totalCommission,
+            avgPerOrder: orders.length > 0 ? totalCommission / orders.length : 0,
+          });
+        }
+      }
+
+      setLoading(false);
+    };
+
     loadData();
   }, []);
 

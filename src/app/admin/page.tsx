@@ -346,6 +346,15 @@ export default function AdminDashboard() {
             <div className="text-xs text-gray-500 dark:text-gray-400">Manage payouts</div>
           </div>
         </Link>
+        <Link href="/admin/activity" className="bg-white dark:bg-gray-900 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow flex items-center gap-3">
+          <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg flex items-center justify-center">
+            <Clock className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+          </div>
+          <div>
+            <div className="font-semibold text-gray-900 dark:text-white">Activity Feed</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Real-time sales</div>
+          </div>
+        </Link>
         <Link href="/team" className="bg-white dark:bg-gray-900 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow flex items-center gap-3">
           <div className="w-10 h-10 bg-amber-100 dark:bg-amber-900/30 rounded-lg flex items-center justify-center">
             <TrendingUp className="w-5 h-5 text-amber-600 dark:text-amber-400" />
