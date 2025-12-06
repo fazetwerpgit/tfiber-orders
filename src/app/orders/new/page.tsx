@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp, Sparkles, Camera, FileText } from 'lucide-react';
 import Link from 'next/link';
 import OrderForm from '@/components/OrderForm';
 import { OrderFormData, getPricingTier, calculatePrice, SaleType, OrderGamificationResult, SALE_TYPE_CONFIG, DEFAULT_POINTS } from '@/lib/types';
@@ -93,7 +93,28 @@ export default function NewOrderPage() {
 
       {/* Form */}
       <main className="p-4 space-y-4">
-        {/* Order Form First - this is the main content */}
+        {/* Entry Method Selector */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-gradient-to-r from-pink-600 to-pink-700 text-white rounded-xl p-4 flex items-center gap-3 shadow-md">
+            <FileText className="w-6 h-6" />
+            <div>
+              <div className="font-semibold">Manual Entry</div>
+              <div className="text-xs text-pink-200">Fill out form below</div>
+            </div>
+          </div>
+          <Link
+            href="/scan"
+            className="bg-white dark:bg-gray-900 rounded-xl p-4 flex items-center gap-3 shadow-sm border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            <Camera className="w-6 h-6 text-gray-500 dark:text-gray-400" />
+            <div>
+              <div className="font-semibold text-gray-900 dark:text-white">Scan Screenshot</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Upload image</div>
+            </div>
+          </Link>
+        </div>
+
+        {/* Order Form - this is the main content */}
         <OrderForm onSubmit={handleSubmit} isSubmitting={isSubmitting} />
 
         {/* Sale Type & Points Section - Collapsible, at the bottom */}

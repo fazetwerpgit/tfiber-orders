@@ -3,12 +3,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Plus, FileText, Users, Settings, TrendingUp, DollarSign, LogOut, Trophy, Flame, Swords, BarChart3, Award, Calculator, Camera } from 'lucide-react';
+import { Plus, FileText, Users, Settings, TrendingUp, DollarSign, LogOut, Trophy, Flame, Swords, BarChart3, Award, Calculator } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { Order, PLAN_NAMES } from '@/lib/types';
 import type { LeaderboardEntry, UserPoints } from '@/lib/types';
 import { TFiberLogo } from '@/components/branding/t-fiber-logo';
 import { getLeaderboard, getUserPoints } from '@/actions/gamification';
+import { getMyOrders } from '@/app/orders/actions';
 import {
   PointsDisplay,
   StreakIndicator,
@@ -55,17 +56,15 @@ export default function Dashboard() {
   };
 
   const loadDashboardData = async () => {
-    const supabase = createClient();
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const weekAgo = new Date(today);
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    // Load orders and gamification data in parallel
+    // Load user's own orders and gamification data in parallel
     const [ordersResult, pointsResult, leaderboardResult] = await Promise.all([
-      supabase.from('orders').select('*').order('created_at', { ascending: false }),
+      getMyOrders(), // Only fetch user's own orders
       getUserPoints(),
       getLeaderboard('week', 10),
     ]);
@@ -204,14 +203,7 @@ export default function Dashboard() {
         </div>
 
         {/* Quick Access */}
-        <div className="grid grid-cols-4 gap-3">
-          <Link
-            href="/scan"
-            className="bg-pink-50 dark:bg-pink-900/20 rounded-xl p-4 text-center hover:bg-pink-100 dark:hover:bg-pink-900/30 transition-colors border border-pink-100 dark:border-pink-900/50"
-          >
-            <Camera className="w-6 h-6 text-pink-600 mx-auto mb-1" />
-            <span className="text-sm font-medium text-pink-900 dark:text-pink-100">Scan</span>
-          </Link>
+        <div className="grid grid-cols-3 gap-3">
           <Link
             href="/achievements"
             className="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 text-center hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors border border-amber-100 dark:border-amber-900/50"
